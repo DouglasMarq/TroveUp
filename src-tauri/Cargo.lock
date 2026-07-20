@@ -4785,7 +4785,7 @@ dependencies = [
 
 [[package]]
 name = "troveup"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "arboard",
  "chrono",
