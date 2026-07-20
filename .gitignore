@@ -1,0 +1,15 @@
+node_modules/
+
+src-tauri/target/
+src-tauri/gen/
+
+*.key
+*.key.pub
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+*.log
+
+dist/

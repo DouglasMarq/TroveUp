@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TroveUp</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header id="app-header">
+    <span id="app-title">TroveUp</span>
+    <nav id="tab-bar">
+      <button class="tab-button active" data-tab="mymods">My Mods</button>
+      <button class="tab-button" data-tab="getmore">Get More Mods</button>
+      <button class="tab-button" data-tab="modpacks">Mod Packs</button>
+      <button class="tab-button" data-tab="trovesaurus">Trovesaurus</button>
+      <button class="tab-button" data-tab="modder">Modder Tools</button>
+      <button class="tab-button" data-tab="settings">Settings</button>
+      <button class="tab-button" data-tab="about">About</button>
+    </nav>
+  </header>
+
+  <main id="tab-content">
+    <section id="tab-mymods" class="tab-panel active">
+      <div class="toolbar">
+        <button id="mm-add"><img class="btn-icon" src="icons/glyphicons-191-plus-sign.png" />Add Mod</button>
+        <button id="mm-remove"><img class="btn-icon" src="icons/glyphicons-193-remove-sign.png" />Remove</button>
+        <button id="mm-update"><img class="btn-icon" src="icons/glyphicons-365-cloud-download.png" />Update</button>
+        <button id="mm-update-file"><img class="btn-icon" src="icons/glyphicons-416-disk-open.png" />Update From File</button>
+        <button id="mm-check"><img class="btn-icon" src="icons/glyphicons-82-refresh.png" />Check For Updates</button>
+        <button id="mm-copy-uri"><img class="btn-icon" src="icons/glyphicons-512-copy.png" />Copy Mod URI</button>
+        <button id="mm-open-folder"><img class="btn-icon" src="icons/glyphicons-145-folder-open.png" />Open Mods Folder</button>
+        <button id="mm-remove-overrides"><img class="btn-icon" src="icons/glyphicons-198-remove-circle.png" />Remove Override Folders</button>
+      </div>
+      <table class="data-table" id="mm-table">
+        <thead>
+          <tr>
+            <th>Enabled</th><th>Name</th><th>Author</th><th>Type</th><th>Version</th>
+            <th>Last Updated</th><th>Status</th><th>Updates Disabled</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="mm-detail" class="detail-panel hidden"></div>
+    </section>
+
+    <section id="tab-getmore" class="tab-panel">
+      <div class="toolbar">
+        <input type="search" id="gm-search" placeholder="Search mods..." />
+        <select id="gm-type"><option value="">All Types</option></select>
+        <select id="gm-subtype"><option value="">All SubTypes</option></select>
+        <select id="gm-sort">
+          <option value="votes">Sort: Votes</option>
+          <option value="totaldownloads">Sort: Downloads</option>
+          <option value="views">Sort: Views</option>
+          <option value="name">Sort: Name</option>
+          <option value="date">Sort: Date</option>
+        </select>
+        <button id="gm-refresh"><img class="btn-icon" src="icons/glyphicons-82-refresh.png" />Refresh</button>
+      </div>
+      <div class="split">
+        <div class="split-left">
+          <table class="data-table" id="gm-table">
+            <thead>
+              <tr><th></th><th>Name</th><th>Author</th><th>Type</th><th>Votes</th><th>Downloads</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="split-right" id="gm-detail"><p class="muted">Select a mod to view details.</p></div>
+      </div>
+    </section>
+
+    <section id="tab-modpacks" class="tab-panel">
+      <div class="split">
+        <div class="split-left">
+          <h3>Trovesaurus Mod Packs</h3>
+          <div class="toolbar">
+            <button id="mp-refresh"><img class="btn-icon" src="icons/glyphicons-82-refresh.png" />Refresh</button>
+          </div>
+          <div id="mp-remote-list" class="card-list"></div>
+        </div>
+        <div class="split-right">
+          <h3>My Mod Packs</h3>
+          <div class="toolbar">
+            <button id="mp-create"><img class="btn-icon" src="icons/glyphicons-44-group.png" />Create From My Mods</button>
+          </div>
+          <div id="mp-local-list" class="card-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-trovesaurus" class="tab-panel">
+      <div id="ts-status" class="status-cards"></div>
+      <div class="split">
+        <div class="split-left">
+          <h3>News <button id="ts-news-refresh" class="inline-btn">Refresh</button></h3>
+          <div id="ts-news" class="card-list"></div>
+        </div>
+        <div class="split-right">
+          <h3>Calendar <button id="ts-calendar-refresh" class="inline-btn">Refresh</button></h3>
+          <div id="ts-calendar" class="card-list"></div>
+          <h3>Live Streams <button id="ts-streams-refresh" class="inline-btn">Refresh</button></h3>
+          <div id="ts-streams" class="card-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-modder" class="tab-panel">
+      <div class="sub-tabs">
+        <button class="sub-tab-button active" data-subtab="build">Build TMod</button>
+        <button class="sub-tab-button" data-subtab="extract">Extract TMod</button>
+        <button class="sub-tab-button" data-subtab="archives">Extract Archives</button>
+      </div>
+
+      <div id="subtab-build" class="sub-tab-panel active">
+        <div class="form-grid">
+          <label>Title</label><input id="md-title" type="text" />
+          <label>Author</label><input id="md-author" type="text" />
+          <label>Notes</label><textarea id="md-notes" rows="4"></textarea>
+          <label>Preview</label>
+          <div class="row">
+            <input id="md-preview" type="text" readonly />
+            <button id="md-pick-preview">Browse</button>
+          </div>
+          <label>Tags</label><div id="md-tags" class="tag-list"></div>
+          <label>Additional Tags</label><input id="md-add-tags" type="text" placeholder="comma, separated, tags" />
+          <label>Files</label>
+          <div>
+            <div class="row">
+              <button id="md-add-files">Add Files</button>
+              <button id="md-remove-files">Remove Selected</button>
+            </div>
+            <select id="md-files" multiple size="10"></select>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="md-save-yaml">Save YAML</button>
+          <button id="md-load-yaml">Load YAML</button>
+          <button id="md-build">Build TMod</button>
+          <button id="md-clear">Clear</button>
+        </div>
+      </div>
+
+      <div id="subtab-extract" class="sub-tab-panel">
+        <div class="form-grid">
+          <label>TMod File</label>
+          <div class="row">
+            <input id="ex-file" type="text" readonly />
+            <button id="ex-pick-file">Browse</button>
+          </div>
+          <label>Extract Folder</label>
+          <div class="row">
+            <input id="ex-folder" type="text" />
+            <button id="ex-pick-folder">Browse</button>
+          </div>
+          <label></label>
+          <div>
+            <label class="check"><input type="checkbox" id="ex-subfolder" checked /> Create subfolder</label>
+            <label class="check"><input type="checkbox" id="ex-override" checked /> Create override folders</label>
+            <label class="check"><input type="checkbox" id="ex-yaml" checked /> Create YAML file</label>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="ex-run">Extract TMod</button>
+          <progress id="ex-progress" max="100" value="0" class="hidden"></progress>
+        </div>
+      </div>
+
+      <div id="subtab-archives" class="sub-tab-panel">
+        <div class="toolbar">
+          <button id="ar-refresh">Refresh</button>
+          <button id="ar-extract-selected">Extract Selected</button>
+          <button id="ar-extract-all">Extract All</button>
+          <button id="ar-list-contents">List Contents</button>
+        </div>
+        <select id="ar-folders" multiple size="12"></select>
+      </div>
+
+      <h4>Dev Tool Output</h4>
+      <pre id="md-output" class="output"></pre>
+    </section>
+
+    <section id="tab-settings" class="tab-panel">
+      <h3>Trove Locations</h3>
+      <table class="data-table" id="st-locations">
+        <thead><tr><th>Enabled</th><th>Primary</th><th>Name</th><th>Path</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="toolbar">
+        <button id="st-add-location">Add Location</button>
+        <button id="st-detect">Auto-Detect</button>
+      </div>
+
+      <h3>Trovesaurus</h3>
+      <div class="form-grid">
+        <label>Account Link Key</label><input id="st-key" type="text" />
+      </div>
+
+      <h3>Options</h3>
+      <label class="check"><input type="checkbox" id="st-auto-update" /> Automatically update mods</label>
+      <label class="check"><input type="checkbox" id="st-game-status" /> Update Trovesaurus game status</label>
+      <label class="check"><input type="checkbox" id="st-check-mail" /> Check Trovesaurus mail</label>
+      <label class="check"><input type="checkbox" id="st-server-status" /> Show server status</label>
+      <label class="check"><input type="checkbox" id="st-start-min" /> Start minimized</label>
+      <label class="check"><input type="checkbox" id="st-min-tray" /> Minimize to tray</label>
+      <div class="form-grid">
+        <label>Auto update interval (hours)</label>
+        <input id="st-interval" type="number" min="1" value="1" />
+      </div>
+
+      <div class="toolbar">
+        <button id="st-save"><img class="btn-icon" src="icons/glyphicons-415-disk-save.png" />Save Settings</button>
+      </div>
+    </section>
+
+    <section id="tab-about" class="tab-panel">
+      <h2>TroveUp</h2>
+      <p id="ab-version"></p>
+      <p>A Tauri port of <a href="#" data-url="https://github.com/DazoTrove/TroveTools.NET">TroveTools.NET</a>, originally created by Dazo.</p>
+      <p>TroveUp allows easy installation of Trove modifications by searching and downloading from the
+        <a href="#" data-url="https://trovesaurus.com/">Trovesaurus</a> mod repository. This application creates the
+        necessary override folders such that the files are not removed by the Glyph client when updating Trove.</p>
+      <p><a href="#" data-url="https://github.com/DouglasMarq/TroveUp">Project repository</a></p>
+      <p><a href="#" data-url="https://github.com/DouglasMarq/TroveUp/issues">Report issues or request features</a></p>
+      <p><button id="ab-check-update"><img class="btn-icon" src="icons/glyphicons-748-synchronization.png" />Check for Updates</button> <span id="ab-update-status" class="muted"></span></p>
+      <p>Licensed under GPL-3.0.</p>
+    </section>
+  </main>
+
+  <footer id="status-bar">
+    <span id="status-text">Ready</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
