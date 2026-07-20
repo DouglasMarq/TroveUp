@@ -388,6 +388,14 @@ input[type="number"] { width: 90px; }
 
 .data-table tbody tr:last-child td { border-bottom: none; }
 
+.data-table thead th.sortable { cursor: pointer; }
+
+.data-table thead th.sortable:hover { color: var(--text); }
+
+.data-table thead th.sorted-asc::after { content: " ▲"; }
+
+.data-table thead th.sorted-desc::after { content: " ▼"; }
+
 .data-table tbody tr { cursor: pointer; transition: background-color 150ms ease; }
 .data-table tbody tr:hover { background: var(--panel-hover); }
 .data-table tbody tr.selected { background: rgba(242, 177, 52, 0.12); }

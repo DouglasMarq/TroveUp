@@ -1,6 +1,6 @@
 [package]
 name = "troveup"
-version = "1.0.2"
+version = "1.0.3"
 description = "TroveUp - easily install Trove modifications from the Trovesaurus mod repository"
 authors = ["DouglasMarq"]
 license = "GPL-3.0"

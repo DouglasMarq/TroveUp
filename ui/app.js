@@ -10,6 +10,7 @@ const state = {
   selectedMyMod: null,
   selectedRemoteMod: null,
   modTags: [],
+  myModsSort: { key: "name", dir: 1 },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -254,6 +255,30 @@ function lazyLoadTab(tab) {
 
 // ---------------- My Mods ----------------
 
+const mmSortValue = {
+  enabled: (m) => (m.enabled ? 1 : 0),
+  name: (m) => String(m.name ?? "").toLowerCase(),
+  author: (m) => String(m.author ?? "").toLowerCase(),
+  type: (m) => (String(m.type ?? "") + (m.subtype ? " / " + m.subtype : "")).toLowerCase(),
+  version: (m) => m.downloads?.find((d) => d.fileid === m.currentFileId)?.version ?? "",
+  lastUpdated: (m) => Number(m.unixTimeSeconds) || 0,
+  status: (m) => (m.status === "New Version Available" ? 0 : m.status === "Up To Date" ? 2 : 1),
+  updatesDisabled: (m) => (m.updatesDisabled ? 1 : 0),
+};
+
+function sortedMyMods() {
+  const { key, dir } = state.myModsSort;
+  if (!key || !mmSortValue[key]) return state.myMods;
+  const get = mmSortValue[key];
+  return [...state.myMods].sort((a, b) => {
+    const va = get(a), vb = get(b);
+    const cmp = typeof va === "number" && typeof vb === "number"
+      ? va - vb
+      : String(va).localeCompare(String(vb));
+    return cmp * dir;
+  });
+}
+
 async function loadMyMods() {
   state.myMods = await run("get_my_mods");
   renderMyMods();
@@ -266,7 +291,7 @@ function renderMyMods() {
     emptyTableRow(tbody, 8, "No mods installed — add some from Get More Mods.");
     return;
   }
-  for (const mod of state.myMods) {
+  for (const mod of sortedMyMods()) {
     const tr = document.createElement("tr");
     const isSelected = state.selectedMyMod === mod.filePath;
     if (isSelected) tr.classList.add("selected");
@@ -280,8 +305,9 @@ function renderMyMods() {
       <td>${formatDate(mod.unixTimeSeconds)}</td>
       <td class="${statusClass(mod.status)}">${statusBadge(mod.status)}</td>
       <td><input type="checkbox" class="mm-updates-disabled" ${mod.updatesDisabled ? "checked" : ""} /></td>`;
-    tr.querySelector(".mm-enabled").addEventListener("change", async (e) => {
-      e.stopPropagation();
+    const enabledBox = tr.querySelector(".mm-enabled");
+    enabledBox.addEventListener("click", (e) => e.stopPropagation());
+    enabledBox.addEventListener("change", async (e) => {
       try {
         state.myMods = await run("set_mod_enabled", { filePath: mod.filePath, enabled: e.target.checked });
       } catch {
@@ -289,9 +315,14 @@ function renderMyMods() {
       }
       renderMyMods();
     });
-    tr.querySelector(".mm-updates-disabled").addEventListener("change", async (e) => {
-      e.stopPropagation();
-      state.myMods = await run("set_mod_updates_disabled", { filePath: mod.filePath, disabled: e.target.checked });
+    const updatesDisabledBox = tr.querySelector(".mm-updates-disabled");
+    updatesDisabledBox.addEventListener("click", (e) => e.stopPropagation());
+    updatesDisabledBox.addEventListener("change", async (e) => {
+      try {
+        state.myMods = await run("set_mod_updates_disabled", { filePath: mod.filePath, disabled: e.target.checked });
+      } catch {
+        e.target.checked = mod.updatesDisabled;
+      }
       renderMyMods();
     });
     tr.addEventListener("click", () => {
@@ -336,7 +367,29 @@ function selectedMod() {
   return state.myMods.find((m) => m.filePath === state.selectedMyMod);
 }
 
+function updateMyModsSortIndicators() {
+  const { key, dir } = state.myModsSort;
+  for (const th of document.querySelectorAll("#mm-table thead th[data-sort]")) {
+    const active = th.dataset.sort === key;
+    th.classList.toggle("sorted-asc", active && dir === 1);
+    th.classList.toggle("sorted-desc", active && dir === -1);
+  }
+}
+
 function setupMyMods() {
+  for (const th of document.querySelectorAll("#mm-table thead th[data-sort]")) {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sort;
+      if (state.myModsSort.key === key) {
+        state.myModsSort.dir *= -1;
+      } else {
+        state.myModsSort = { key, dir: 1 };
+      }
+      updateMyModsSortIndicators();
+      renderMyMods();
+    });
+  }
+  updateMyModsSortIndicators();
   $("#mm-add").addEventListener("click", (e) => withBusy(e.currentTarget, async () => {
     const path = await run("pick_mod_file", {}, { silent: true });
     if (!path) return;
