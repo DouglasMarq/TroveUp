@@ -4807,6 +4807,7 @@ dependencies = [
  "tauri-plugin-updater",
  "urlencoding",
  "walkdir",
+ "winreg",
  "zip 2.4.2",
 ]
 

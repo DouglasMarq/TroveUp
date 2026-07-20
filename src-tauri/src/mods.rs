@@ -378,7 +378,11 @@ pub fn mod_files(trove_mod: &TroveMod, primary_location_path: Option<&Path>) -> 
 
 pub fn detect_my_mods(my_mods: &mut Vec<TroveMod>) {
     let mut mod_files: Vec<PathBuf> = Vec::new();
-    for folder in [Some(settings::mods_folder()), settings::trove_toolbox_mods_folder()]
+    for folder in [
+        Some(settings::mods_folder()),
+        settings::trove_toolbox_mods_folder(),
+        settings::trove_tools_dotnet_mods_folder(),
+    ]
         .into_iter()
         .flatten()
     {

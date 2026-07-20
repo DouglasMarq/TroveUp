@@ -15,6 +15,7 @@ pub struct AppState {
     my_mods: Mutex<Option<Vec<TroveMod>>>,
     my_mod_packs: Mutex<Option<Vec<TroveModPack>>>,
     trovesaurus_mods: Mutex<Option<Vec<TroveMod>>>,
+    last_mod_list_fetch: Mutex<Option<std::time::Instant>>,
 }
 
 impl AppState {
@@ -24,6 +25,14 @@ impl AppState {
             let mut loaded = settings::load_my_mods();
             if loaded.is_empty() {
                 mods::detect_my_mods(&mut loaded);
+                let remote_list = settings::load_trovesaurus_mods_cache();
+                let locations = enabled_locations(&self.settings.lock().unwrap());
+                for trove_mod in loaded.iter_mut() {
+                    if let Some(remote) = mods::find_trovesaurus_mod(trove_mod, &remote_list) {
+                        trove_mod.update_properties_from_trovesaurus(remote);
+                    }
+                    let _ = mods::install_mod(trove_mod, &locations);
+                }
                 let _ = settings::save_my_mods(&loaded);
             }
             *guard = Some(loaded);
@@ -114,10 +123,23 @@ async fn get_trovesaurus_mods(state: State<'_, AppState>, refresh: bool) -> Resu
         if let Some(cached) = state.trovesaurus_mods.lock().unwrap().clone() {
             return Ok(cached);
         }
+    } else {
+        let throttled = state
+            .last_mod_list_fetch
+            .lock()
+            .unwrap()
+            .map(|t| t.elapsed() < std::time::Duration::from_secs(30))
+            .unwrap_or(false);
+        if throttled {
+            if let Some(cached) = state.trovesaurus_mods.lock().unwrap().clone() {
+                return Ok(cached);
+            }
+        }
     }
     match trovesaurus::fetch_mod_list().await {
         Ok(list) => {
             *state.trovesaurus_mods.lock().unwrap() = Some(list.clone());
+            *state.last_mod_list_fetch.lock().unwrap() = Some(std::time::Instant::now());
             Ok(list)
         }
         Err(e) => {
@@ -139,9 +161,27 @@ async fn trovesaurus_mod_list(state: &State<'_, AppState>) -> Vec<TroveMod> {
     match trovesaurus::fetch_mod_list().await {
         Ok(list) => {
             *state.trovesaurus_mods.lock().unwrap() = Some(list.clone());
+            *state.last_mod_list_fetch.lock().unwrap() = Some(std::time::Instant::now());
             list
         }
-        Err(_) => settings::load_trovesaurus_mods_cache(),
+        Err(_) => {
+            let cached = settings::load_trovesaurus_mods_cache();
+            if !cached.is_empty() {
+                *state.trovesaurus_mods.lock().unwrap() = Some(cached.clone());
+            }
+            cached
+        }
+    }
+}
+
+async fn trovesaurus_mod_list_fresh(state: &State<'_, AppState>) -> Vec<TroveMod> {
+    match trovesaurus::fetch_mod_list().await {
+        Ok(list) => {
+            *state.trovesaurus_mods.lock().unwrap() = Some(list.clone());
+            *state.last_mod_list_fetch.lock().unwrap() = Some(std::time::Instant::now());
+            list
+        }
+        Err(_) => trovesaurus_mod_list(state).await,
     }
 }
 
@@ -158,11 +198,6 @@ async fn get_calendar() -> Result<Vec<CalendarItem>, String> {
 #[tauri::command]
 async fn get_streams() -> Result<Vec<OnlineStream>, String> {
     trovesaurus::fetch_streams().await
-}
-
-#[tauri::command]
-async fn get_server_status() -> Result<TroveServerStatus, String> {
-    trovesaurus::fetch_server_status().await
 }
 
 #[tauri::command]
@@ -206,7 +241,13 @@ async fn add_mod(app: AppHandle, state: State<'_, AppState>, path: String) -> Re
         trove_mod.update_properties_from_trovesaurus(remote);
     }
     let settings = current_settings(&state);
-    mods::install_mod(&mut trove_mod, &enabled_locations(&settings))?;
+    if let Err(e) = mods::install_mod(&mut trove_mod, &enabled_locations(&settings)) {
+        trove_mod.status = mods::error_status(&e);
+        log_event(&app, format!("Error installing mod {}: {}", trove_mod.name, e));
+        my_mods.push(trove_mod);
+        state.set_my_mods(my_mods.clone());
+        return Ok(my_mods);
+    }
     mods::check_for_updates(&mut trove_mod, &remote_list);
 
     log_event(&app, format!("Added mod: {}", trove_mod.name));
@@ -230,12 +271,13 @@ fn remove_mod(app: AppHandle, state: State<AppState>, file_path: String) -> Resu
 }
 
 #[tauri::command]
-fn set_mod_enabled(
+async fn set_mod_enabled(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     file_path: String,
     enabled: bool,
 ) -> Result<Vec<TroveMod>, String> {
+    let remote_list = trovesaurus_mod_list(&state).await;
     let mut my_mods = state.get_my_mods();
     let settings = current_settings(&state);
     if let Some(trove_mod) = my_mods.iter_mut().find(|m| m.file_path == file_path) {
@@ -246,9 +288,9 @@ fn set_mod_enabled(
                 log_event(&app, format!("Installed mod: {}", trove_mod.name));
             } else {
                 mods::uninstall_mod(trove_mod, &enabled_locations(&settings))?;
-                trove_mod.status = String::new();
                 log_event(&app, format!("Uninstalled mod: {}", trove_mod.name));
             }
+            mods::check_for_updates(trove_mod, &remote_list);
         }
     }
     state.set_my_mods(my_mods.clone());
@@ -309,10 +351,12 @@ async fn install_trovesaurus_mod_inner(
     let mut my_mods = state.get_my_mods();
 
     let existing_pos = my_mods.iter().position(|m| m.id == id);
-    let mut enabled = true;
+    let mut updates_disabled = false;
+    let mut pack_name = String::new();
     if let Some(pos) = existing_pos {
         let mut old = my_mods[pos].clone();
-        enabled = old.enabled;
+        updates_disabled = old.updates_disabled;
+        pack_name = old.pack_name.clone();
         if old.enabled {
             mods::uninstall_mod(&mut old, &enabled_locations(&state.settings.lock().unwrap()))?;
         }
@@ -320,7 +364,6 @@ async fn install_trovesaurus_mod_inner(
         if old_path.exists() && old_path.to_string_lossy() != local_path {
             let _ = std::fs::remove_file(&old_path);
         }
-        my_mods.remove(pos);
     }
 
     let mut trove_mod = mods::load_mod_from_file(Path::new(&local_path))?;
@@ -329,15 +372,18 @@ async fn install_trovesaurus_mod_inner(
     if let Some(d) = remote.downloads.iter().find(|d| d.file_id == file_id) {
         trove_mod.unix_time_seconds = d.date_seconds();
     }
-    trove_mod.enabled = enabled;
+    trove_mod.enabled = true;
+    trove_mod.updates_disabled = updates_disabled;
+    trove_mod.pack_name = pack_name;
 
-    if enabled {
-        mods::install_mod(&mut trove_mod, &enabled_locations(&state.settings.lock().unwrap()))?;
-    }
+    mods::install_mod(&mut trove_mod, &enabled_locations(&state.settings.lock().unwrap()))?;
     trove_mod.status = mods::STATUS_UP_TO_DATE.to_string();
 
     log_event(app, format!("Installed mod: {}", trove_mod.name));
-    my_mods.push(trove_mod);
+    match existing_pos {
+        Some(pos) => my_mods[pos] = trove_mod,
+        None => my_mods.push(trove_mod),
+    }
     state.set_my_mods(my_mods.clone());
     Ok(my_mods)
 }
@@ -395,6 +441,7 @@ async fn update_mod(
     }
     updated.enabled = trove_mod.enabled;
     updated.updates_disabled = trove_mod.updates_disabled;
+    updated.pack_name = trove_mod.pack_name.clone();
 
     if !old_file.is_empty() && old_file != new_path && Path::new(&old_file).exists() {
         let _ = std::fs::remove_file(&old_file);
@@ -445,6 +492,15 @@ async fn update_mod_path(
     let mut updated = mods::load_mod_from_file(&new_path)?;
     updated.enabled = trove_mod.enabled;
     updated.updates_disabled = trove_mod.updates_disabled;
+    updated.pack_name = trove_mod.pack_name.clone();
+    if let Ok(metadata) = std::fs::metadata(&new_path) {
+        if let Ok(modified) = metadata.modified() {
+            updated.unix_time_seconds = modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(updated.unix_time_seconds);
+        }
+    }
     if let Some(remote) = mods::find_trovesaurus_mod(&updated, &remote_list) {
         updated.update_properties_from_trovesaurus(remote);
     }
@@ -463,7 +519,7 @@ async fn update_mod_path(
 
 #[tauri::command]
 async fn check_all_updates(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<TroveMod>, String> {
-    let remote_list = trovesaurus_mod_list(&state).await;
+    let remote_list = trovesaurus_mod_list_fresh(&state).await;
     let mut my_mods = state.get_my_mods();
     for trove_mod in my_mods.iter_mut() {
         mods::check_for_updates(trove_mod, &remote_list);
@@ -488,6 +544,18 @@ fn get_mod_files(state: State<AppState>, file_path: String) -> Result<Vec<String
 fn remove_override_folders(app: AppHandle, state: State<AppState>) -> u32 {
     let settings = current_settings(&state);
     let count = mods::remove_mod_folders(&enabled_locations(&settings));
+    let mut my_mods = state.get_my_mods();
+    let mut changed = false;
+    for trove_mod in my_mods.iter_mut() {
+        if trove_mod.enabled {
+            trove_mod.enabled = false;
+            trove_mod.status = String::new();
+            changed = true;
+        }
+    }
+    if changed {
+        state.set_my_mods(my_mods);
+    }
     log_event(&app, format!("Removed {} override folder(s)", count));
     count
 }
@@ -524,19 +592,31 @@ fn get_my_mod_packs(state: State<AppState>) -> Vec<TroveModPack> {
 
 #[tauri::command]
 fn create_mod_pack(state: State<AppState>, name: String, mod_ids: Vec<String>) -> Result<Vec<TroveModPack>, String> {
-    let my_mods = state.get_my_mods();
+    let mut my_mods = state.get_my_mods();
     let mut pack = TroveModPack {
-        name,
+        name: name.clone(),
         source: "Local".to_string(),
         ..Default::default()
     };
     for id in mod_ids {
-        if let Some(m) = my_mods.iter().find(|m| m.id == id) {
-            pack.mods.push(m.clone());
+        if let Some(pos) = my_mods
+            .iter()
+            .position(|m| m.id == id && m.enabled && !m.id.is_empty())
+        {
+            my_mods[pos].pack_name = name.clone();
+            pack.mods.push(my_mods[pos].clone());
         }
     }
     let mut packs = state.get_my_mod_packs();
-    packs.push(pack);
+    if let Some(existing) = packs
+        .iter_mut()
+        .find(|p| p.name == name && p.pack_id.is_empty())
+    {
+        *existing = pack;
+    } else {
+        packs.push(pack);
+    }
+    state.set_my_mods(my_mods);
     state.set_my_mod_packs(packs.clone());
     Ok(packs)
 }
@@ -545,6 +625,17 @@ fn create_mod_pack(state: State<AppState>, name: String, mod_ids: Vec<String>) -
 fn remove_mod_pack(state: State<AppState>, name: String) -> Vec<TroveModPack> {
     let mut packs = state.get_my_mod_packs();
     packs.retain(|p| p.name != name || !p.pack_id.is_empty());
+    let mut my_mods = state.get_my_mods();
+    let mut changed = false;
+    for trove_mod in my_mods.iter_mut() {
+        if trove_mod.pack_name == name {
+            trove_mod.pack_name = String::new();
+            changed = true;
+        }
+    }
+    if changed {
+        state.set_my_mods(my_mods);
+    }
     state.set_my_mod_packs(packs.clone());
     packs
 }
@@ -559,15 +650,26 @@ async fn install_mod_pack(
         if trove_mod.id.is_empty() {
             continue;
         }
-        let file_id = trove_mod
-            .latest_download()
-            .map(|d| d.file_id.clone())
-            .unwrap_or_default();
-        if file_id.is_empty() {
-            continue;
+        let already_installed = state
+            .get_my_mods()
+            .iter()
+            .any(|m| m.id == trove_mod.id);
+        if !already_installed {
+            let file_id = trove_mod
+                .latest_download()
+                .map(|d| d.file_id.clone())
+                .unwrap_or_default();
+            if file_id.is_empty() {
+                continue;
+            }
+            log_event(&app, format!("Installing mod pack mod: {}", trove_mod.name));
+            install_trovesaurus_mod_inner(&app, &state, trove_mod.id.clone(), file_id).await?;
         }
-        log_event(&app, format!("Installing mod pack mod: {}", trove_mod.name));
-        install_trovesaurus_mod_inner(&app, &state, trove_mod.id.clone(), file_id).await?;
+        let mut my_mods = state.get_my_mods();
+        if let Some(m) = my_mods.iter_mut().find(|m| m.id == trove_mod.id) {
+            m.pack_name = pack.name.clone();
+            state.set_my_mods(my_mods);
+        }
     }
     Ok(state.get_my_mods())
 }
@@ -633,8 +735,10 @@ fn get_extractable_folders(state: State<AppState>) -> Vec<String> {
 }
 
 #[tauri::command]
-fn make_relative_path(full_path: String) -> String {
-    mods::make_relative_path(Path::new(&full_path), Path::new(""))
+fn make_relative_path(full_path: String, state: State<AppState>) -> String {
+    let settings = current_settings(&state);
+    let base = primary_location_path(&settings).unwrap_or_default();
+    mods::make_relative_path(Path::new(&full_path), &base)
 }
 
 #[tauri::command]
@@ -686,15 +790,11 @@ async fn run_dev_tool(state: State<'_, AppState>, command_line_args: String) -> 
             return Err(format!("Trove.exe not found at {}", exe.display()));
         }
 
-        let status = std::process::Command::new(&exe)
+        std::process::Command::new(&exe)
             .args(split_command_args(&command_line_args))
             .current_dir(&loc.location_path)
             .status()
             .map_err(|e| e.to_string())?;
-
-        if !status.success() {
-            return Err(format!("Dev tool exited with status: {}", status));
-        }
 
         if dev_tool_log.exists() {
             std::fs::read_to_string(&dev_tool_log).map_err(|e| e.to_string())
@@ -854,10 +954,20 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
-            settings: Mutex::new(settings::load_settings()),
+            settings: Mutex::new({
+                let mut s = settings::load_settings();
+                if s.locations.is_empty() {
+                    settings::detect_locations(&mut s.locations);
+                } else if !s.locations.iter().any(|l| l.primary) {
+                    s.locations[0].primary = true;
+                }
+                let _ = settings::save_settings(&s);
+                s
+            }),
             my_mods: Mutex::new(None),
             my_mod_packs: Mutex::new(None),
             trovesaurus_mods: Mutex::new(None),
+            last_mod_list_fetch: Mutex::new(None),
         })
         .setup(|app| {
             use tauri::menu::{Menu, MenuItem};
@@ -922,12 +1032,22 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let state = window.app_handle().state::<AppState>();
-                if state.settings.lock().unwrap().minimize_to_tray {
-                    api.prevent_close();
-                    let _ = window.hide();
+            let state = window.app_handle().state::<AppState>();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if state.settings.lock().unwrap().minimize_to_tray {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
                 }
+                tauri::WindowEvent::Resized(_) => {
+                    if state.settings.lock().unwrap().minimize_to_tray {
+                        if let Ok(true) = window.is_minimized() {
+                            let _ = window.hide();
+                        }
+                    }
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -941,7 +1061,6 @@ fn main() {
             get_news,
             get_calendar,
             get_streams,
-            get_server_status,
             get_mail_count,
             get_mod_packs,
             get_my_mods,

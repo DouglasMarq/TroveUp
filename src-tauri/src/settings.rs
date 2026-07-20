@@ -13,7 +13,6 @@ pub struct Settings {
     pub minimize_to_tray: bool,
     pub update_trove_game_status: bool,
     pub trovesaurus_check_mail: bool,
-    pub trovesaurus_server_status: bool,
 }
 
 impl Default for Settings {
@@ -27,7 +26,6 @@ impl Default for Settings {
             minimize_to_tray: false,
             update_trove_game_status: true,
             trovesaurus_check_mail: false,
-            trovesaurus_server_status: false,
         }
     }
 }
@@ -45,6 +43,16 @@ pub fn mods_folder() -> PathBuf {
 pub fn trove_toolbox_mods_folder() -> Option<PathBuf> {
     let base = dirs::data_dir()?;
     let folder = base.join("Trove Toolbox").join("mods");
+    if folder.is_dir() {
+        Some(folder)
+    } else {
+        None
+    }
+}
+
+pub fn trove_tools_dotnet_mods_folder() -> Option<PathBuf> {
+    let base = dirs::data_dir()?;
+    let folder = base.join("TroveTools.NET").join("mods");
     if folder.is_dir() {
         Some(folder)
     } else {
@@ -136,6 +144,38 @@ pub fn detect_locations(existing: &mut Vec<TroveLocation>) {
 
     #[cfg(target_os = "windows")]
     {
+        use winreg::enums::*;
+        use winreg::RegKey;
+
+        const UNINSTALL: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+        for hive in [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
+            for view in [KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
+                let base = RegKey::predef(hive);
+                let Ok(uninstall) = base.open_subkey_with_flags(UNINSTALL, KEY_READ | view) else {
+                    continue;
+                };
+                for key_name in uninstall.enum_keys().flatten() {
+                    if key_name.starts_with("Glyph Trove") {
+                        if let Ok(key) = uninstall.open_subkey(&key_name) {
+                            if let Ok(path) = key.get_value::<String, _>("InstallLocation") {
+                                let name = format!("{} (Glyph)", key_name.replace("Glyph ", ""));
+                                potential.push((PathBuf::from(path), name));
+                            }
+                        }
+                    }
+                }
+                if let Ok(key) = uninstall.open_subkey("Steam App 304050") {
+                    if let Ok(path) = key.get_value::<String, _>("InstallLocation") {
+                        let p = PathBuf::from(path);
+                        potential.push((p.join("Live"), "Trove Live (Steam)".into()));
+                        potential.push((p.join(r"Games\Trove\Live"), "Trove Live (Steam)".into()));
+                        potential.push((p.join("PTS"), "Trove PTS (Steam)".into()));
+                        potential.push((p.join(r"Games\Trove\PTS"), "Trove PTS (Steam)".into()));
+                    }
+                }
+            }
+        }
+
         let program_files = std::env::var("ProgramFiles").unwrap_or_default();
         let program_files_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_default();
         for pf in [program_files_x86, program_files] {

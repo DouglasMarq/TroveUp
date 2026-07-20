@@ -30,3 +30,6 @@ urlencoding = "2"
 html-escape = "0.2"
 walkdir = "2"
 log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"

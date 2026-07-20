@@ -12,19 +12,6 @@ where
     }
 }
 
-pub fn de_bool_flexible<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let v = serde_json::Value::deserialize(deserializer)?;
-    match v {
-        serde_json::Value::Bool(b) => Ok(b),
-        serde_json::Value::String(s) => Ok(matches!(s.to_lowercase().as_str(), "true" | "1" | "yes")),
-        serde_json::Value::Number(n) => Ok(n.as_i64().unwrap_or(0) != 0),
-        _ => Ok(false),
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModDownload {
@@ -281,26 +268,6 @@ pub struct OnlineStream {
     pub updated: String,
 }
 
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ServerStatusEntry {
-    #[serde(rename = "online", deserialize_with = "de_bool_flexible")]
-    pub online: bool,
-    #[serde(rename = "date")]
-    pub date: String,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct TroveServerStatus {
-    #[serde(rename = "Live")]
-    pub live: ServerStatusEntry,
-    #[serde(rename = "Server")]
-    pub server: ServerStatusEntry,
-    #[serde(rename = "PTS")]
-    pub pts: ServerStatusEntry,
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]

@@ -6,7 +6,6 @@ pub const MOD_LIST_URL: &str = "https://trovesaurus.com/modsapi.php?mode=list";
 pub const MOD_PACKS_URL: &str = "https://trovesaurus.com/modpacks";
 pub const CALENDAR_URL: &str = "https://trovesaurus.com/toolbox/calendar.php";
 pub const NEWS_URL: &str = "https://trovesaurus.com/feeds/news.php";
-pub const SERVER_STATUS_URL: &str = "https://trovesaurus.com/statusjson.php";
 pub const ONLINE_STREAMS_URL: &str = "https://trovesaurus.com/feeds/onlinestreams.php";
 pub const MAIL_COUNT_URL: &str = "https://trovesaurus.com/toolbox/mailcount.php";
 
@@ -14,7 +13,7 @@ pub fn add_querystring(url: &str, include_ticks: bool) -> String {
     let key = settings::load_settings().trovesaurus_account_link_key;
     let mut new_url = String::from(url);
     new_url.push_str(if url.contains('?') { "&" } else { "?" });
-    new_url.push_str("ml=TroveUp");
+    new_url.push_str("ml=TroveTools.NET");
     if !key.is_empty() {
         new_url.push_str(&format!("&key={}", key));
     }
@@ -45,52 +44,39 @@ pub async fn fetch_mod_list() -> Result<Vec<TroveMod>, String> {
     Ok(mods)
 }
 
-pub async fn fetch_news() -> Result<Vec<NewsItem>, String> {
-    let url = add_querystring(NEWS_URL, false);
+async fn fetch_json(url: &str) -> Result<serde_json::Value, String> {
     http_client()
-        .get(&url)
+        .get(url)
         .send()
         .await
         .map_err(|e| e.to_string())?
         .json()
         .await
         .map_err(|e| e.to_string())
+}
+
+fn flexible_list<T: serde::de::DeserializeOwned>(value: &serde_json::Value) -> Vec<T> {
+    let items: Box<dyn Iterator<Item = &serde_json::Value>> = match value {
+        serde_json::Value::Array(arr) => Box::new(arr.iter()),
+        serde_json::Value::Object(map) => Box::new(map.values()),
+        _ => return Vec::new(),
+    };
+    items.filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+}
+
+pub async fn fetch_news() -> Result<Vec<NewsItem>, String> {
+    let url = add_querystring(NEWS_URL, false);
+    Ok(flexible_list(&fetch_json(&url).await?))
 }
 
 pub async fn fetch_calendar() -> Result<Vec<CalendarItem>, String> {
     let url = add_querystring(CALENDAR_URL, true);
-    http_client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())
+    Ok(flexible_list(&fetch_json(&url).await?))
 }
 
 pub async fn fetch_streams() -> Result<Vec<OnlineStream>, String> {
     let url = add_querystring(ONLINE_STREAMS_URL, false);
-    http_client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-pub async fn fetch_server_status() -> Result<TroveServerStatus, String> {
-    let url = add_querystring(SERVER_STATUS_URL, true);
-    http_client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())
+    Ok(flexible_list(&fetch_json(&url).await?))
 }
 
 pub async fn fetch_mail_count() -> Result<i64, String> {
@@ -169,6 +155,8 @@ pub async fn download_mod(trove_mod: &TroveMod, file_id: &str) -> Result<String,
         .get(&url)
         .send()
         .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
         .map_err(|e| e.to_string())?
         .bytes()
         .await
