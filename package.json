@@ -1,7 +1,7 @@
 {
   "name": "troveup",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.0.1",
   "description": "TroveUp - easily install Trove modifications from the Trovesaurus mod repository (Tauri port of TroveTools.NET)",
   "scripts": {
     "dev": "tauri dev",
