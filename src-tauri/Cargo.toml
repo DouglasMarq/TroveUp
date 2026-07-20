@@ -1,8 +1,8 @@
 [package]
 name = "troveup"
 version = "1.0.2"
-description = "TroveUp - easily install Trove modifications from the Trovesaurus mod repository (Tauri port of TroveTools.NET)"
-authors = ["DouglasMarq", "Dazo (original TroveTools.NET)"]
+description = "TroveUp - easily install Trove modifications from the Trovesaurus mod repository"
+authors = ["DouglasMarq"]
 license = "GPL-3.0"
 edition = "2021"
 
