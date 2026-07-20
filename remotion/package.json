@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@remotion/cli": "4.0.354",
-    "remotion": "4.0.354",
+    "remotion": "4.0.410",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   }
